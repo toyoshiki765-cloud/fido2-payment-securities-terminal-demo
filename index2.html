@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>金融システム(仮) - 証券取引ターミナル デモ</title>
+<style>
+  :root{
+    --blue:#1a56c4; --blue-bg:#e8f0fe;
+    --green:#0a9c4b; --green-bg:#e6f6ec;
+    --red:#c00012; --red-bg:#fdeaea;
+    --gray:#5f6368; --gray-light:#9aa0a6;
+    --bg:#eef1f5; --panel:#ffffff; --border:#dfe3e8; --text:#1a1a1a;
+    --warn:#b45309; --warn-bg:#fff3e0;
+    --menubar:#f3f4f6;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",Meiryo,sans-serif;
+    font-size:13px;
+  }
+  button{ font-family:inherit; cursor:pointer; }
+  input, select{ font-family:inherit; }
+
+  /* ===================== APP SHELL (desktop grid) ===================== */
+  .app{
+    display:grid;
+    grid-template-columns: 230px 1fr 300px;
+    grid-template-areas:
+      "menubar menubar menubar"
+      "watchlist chartcol orderpanel"
+      "bottombar bottombar bottombar";
+    grid-template-rows: auto 1fr auto;
+    height:100vh;
+  }
+
+  /* ---- menu / title bar ---- */
+  .menubar{
+    grid-area: menubar;
+    background:#ffffff; border-bottom:1px solid var(--border);
+  }
+  .menubar .titlerow{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:6px 14px; background:var(--menubar); border-bottom:1px solid var(--border);
+  }
+  .menubar .brand{ font-size:13.5px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .menubar .brand .dot{ width:8px; height:8px; border-radius:50%; background:var(--green); }
+  .menubar .menuitems{ display:flex; gap:16px; font-size:11.5px; color:var(--gray); }
+  .menubar .clock{ font-size:11.5px; color:var(--gray); font-variant-numeric:tabular-nums; }
+  .menubar .toolbar{
+    display:flex; align-items:center; gap:6px; padding:6px 12px;
+  }
+  .menubar .toolbar .tf{
+    padding:4px 9px; font-size:11px; border:1px solid transparent; border-radius:4px;
+    background:none; color:var(--gray);
+  }
+  .menubar .toolbar .tf.active{ background:var(--blue-bg); color:var(--blue); font-weight:700; }
+  .menubar .toolbar .sep{ width:1px; height:18px; background:var(--border); margin:0 4px; }
+  .menubar .status-pill{
+    margin-left:auto; display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700;
+    padding:4px 10px; border-radius:6px;
+  }
+  .menubar .status-pill.locked{ background:#f0f0f0; color:var(--gray); }
+  .menubar .status-pill.open{ background:var(--green-bg); color:var(--green); }
+  .menubar .status-pill.blocked{ background:var(--red-bg); color:var(--red); }
+
+  /* ---- watchlist (left) ---- */
+  .watchlist{
+    grid-area: watchlist; background:var(--panel); border-right:1px solid var(--border);
+    overflow-y:auto;
+  }
+  .watchlist .head{
+    padding:8px 12px; font-size:11px; color:var(--gray); border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; background:#fafbfc; position:sticky; top:0;
+  }
+  .watchlist table{ width:100%; border-collapse:collapse; }
+  .watchlist th{
+    font-size:10px; color:var(--gray-light); text-align:left; font-weight:600;
+    padding:5px 10px; border-bottom:1px solid var(--border); position:sticky; top:29px; background:#fafbfc;
+  }
+  .watchlist th.num{ text-align:right; }
+  .watchlist td{ padding:5px 10px; border-bottom:1px solid #f1f2f4; font-size:11.5px; font-variant-numeric:tabular-nums; }
+  .watchlist td.num{ text-align:right; font-weight:600; }
+  .watchlist tr.up td.num{ color:var(--blue); }
+  .watchlist tr.down td.num{ color:var(--red); }
+  .watchlist tr.selected{ background:var(--blue-bg); }
+  .watchlist tr{ cursor:pointer; }
+  .watchlist tr:hover{ background:#f5f7fa; }
+  .watchlist .arrow{ display:inline-block; width:0; height:0; margin-right:4px; vertical-align:middle; }
+  .watchlist tr.up .arrow{ border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:6px solid var(--blue); }
+  .watchlist tr.down .arrow{ border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid var(--red); }
+
+  /* ---- chart column (center) ---- */
+  .chartcol{ grid-area: chartcol; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+  .chart-frame{
+    margin:10px; background:var(--panel); border:1px solid var(--border); border-radius:6px;
+    flex:1; display:flex; flex-direction:column; min-height:260px; overflow:hidden;
+  }
+  .chart-frame .cfheader{
+    display:flex; align-items:center; justify-content:space-between; padding:8px 12px;
+    border-bottom:1px solid var(--border); font-size:12.5px;
+  }
+  .chart-frame .cfheader .sym{ font-weight:700; }
+  .chart-frame .cfheader .px{ font-variant-numeric:tabular-nums; color:var(--gray); }
+  .chart-frame canvas{ width:100%; flex:1; display:block; }
+
+  .below-chart{
+    margin:0 10px 10px; background:var(--panel); border:1px solid var(--border); border-radius:6px;
+    max-height:180px; display:flex; flex-direction:column;
+  }
+  .below-chart .tabs{ display:flex; border-bottom:1px solid var(--border); }
+  .below-chart .tabs button{
+    background:none; border:none; padding:8px 14px; font-size:11.5px; color:var(--gray);
+    border-bottom:2px solid transparent;
+  }
+  .below-chart .tabs button.active{ color:var(--blue); border-bottom-color:var(--blue); font-weight:700; }
+  .below-chart .panel{ padding:8px 12px; overflow-y:auto; font-size:11.5px; }
+
+  .positions-empty, .order-empty{ color:var(--gray-light); padding:14px 0; text-align:center; }
+  .position-row{
+    display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f1f2f4; gap:8px;
+  }
+  .position-row .psym{ font-weight:700; width:70px; }
+  .position-row .pside.buy{ color:var(--blue); }
+  .position-row .pside.sell{ color:var(--red); }
+
+  .term{
+    background:#111827; color:#9ca3af; font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:10.5px; padding:2px 0;
+  }
+  .term .line{ padding:2px 12px; white-space:pre-wrap; word-break:break-all; }
+  .term .ok{ color:#34d399; } .term .warn{ color:#fbbf24; } .term .err{ color:#f87171; }
+
+  /* ---- order panel (right) ---- */
+  .orderpanel{
+    grid-area: orderpanel; background:var(--panel); border-left:1px solid var(--border);
+    overflow-y:auto; padding:14px;
+  }
+  .op-card{ border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:14px; }
+  .op-card h4{ font-size:12.5px; margin:0 0 10px; display:flex; align-items:center; gap:6px; }
+  .op-card p.note{ font-size:11px; color:var(--gray); line-height:1.6; margin:0 0 12px; }
+  .op-row{ display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid #f1f2f4; font-size:12px; }
+  .op-row:last-of-type{ border-bottom:none; }
+  .op-row .lbl{ color:var(--gray); }
+  .op-row select, .op-row input{
+    border:1px solid var(--border); border-radius:5px; padding:5px 8px; font-size:12px; text-align:right; color:var(--text);
+  }
+  .op-row select{ text-align:left; }
+  .side-toggle{ display:flex; gap:6px; }
+  .side-toggle button{
+    flex:1; padding:9px 0; border-radius:6px; font-size:12.5px; font-weight:700; border:1.5px solid var(--border);
+    background:#fff; color:var(--gray);
+  }
+  .side-toggle button.buy.active{ background:var(--blue-bg); border-color:var(--blue); color:var(--blue); }
+  .side-toggle button.sell.active{ background:var(--red-bg); border-color:var(--red); color:var(--red); }
+  .cta{
+    width:100%; padding:11px; border:none; border-radius:7px; font-size:13px; font-weight:700;
+    cursor:pointer; background:var(--blue); color:#fff; margin-top:6px;
+  }
+  .cta:disabled{ opacity:.5; cursor:not-allowed; }
+  .cta.outline{ background:#fff; color:var(--warn); border:1.5px solid var(--warn); }
+  .cta.ghost{ background:#fff; color:var(--gray); border:1.5px solid var(--border); }
+
+  .attack-card{ background:var(--warn-bg); border:1.5px dashed #f0b054; }
+  .attack-card h4{ color:var(--warn); }
+  .attack-card p.note{ color:var(--warn); }
+  .attack-card .op-row .lbl{ color:var(--warn); }
+  .attack-card select, .attack-card input{ border-color:#f0c98a; color:var(--warn); }
+
+  .tag{ display:inline-block; font-size:9.5px; background:#f0b054; color:#fff; padding:2px 7px; border-radius:5px; }
+  .badge{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; }
+  .badge.open{ background:var(--green-bg); color:var(--green); }
+  .badge.blocked{ background:var(--red-bg); color:var(--red); }
+
+  /* login card inside order panel */
+  .login-card .cta{ margin-top:14px; }
+
+  /* result card */
+  .result-card{ text-align:center; padding:6px 0; }
+  .result-card .ic{ font-size:36px; margin-bottom:6px; }
+  .result-card h3{ font-size:15px; margin:0 0 6px; }
+  .result-card p{ font-size:11.5px; color:var(--gray); line-height:1.6; margin:0 0 8px; }
+  .diff{ background:var(--red-bg); border-radius:8px; padding:10px 12px; margin:10px 0; font-size:11px; text-align:left; }
+  .diff div{ display:flex; justify-content:space-between; padding:2px 0; }
+  .diff .k{ color:#7f1d1d; }
+  .diff .before{ color:#166534; font-weight:700; }
+  .diff .after{ color:var(--red); font-weight:700; }
+
+  /* ---- bottom account bar ---- */
+  .bottombar{
+    grid-area: bottombar; background:#ffffff; border-top:1px solid var(--border);
+    padding:7px 16px; display:flex; gap:26px; font-size:11.5px; align-items:center; flex-wrap:wrap;
+  }
+  .bottombar .item{ display:flex; gap:6px; }
+  .bottombar .item .k{ color:var(--gray); }
+  .bottombar .item .v{ font-weight:700; font-variant-numeric:tabular-nums; }
+  .bottombar .item .v.neg{ color:var(--red); }
+
+  /* biometric modal (shared) */
+  .overlay{ position:fixed; inset:0; background:rgba(17,24,39,.75); display:none; align-items:center; justify-content:center; z-index:50; }
+  .overlay.show{ display:flex; }
+  .bio-modal{ background:#fff; border-radius:16px; padding:30px 26px; width:260px; text-align:center; }
+  .bio-modal h3{ font-size:15px; margin:0 0 6px; }
+  .bio-modal p{ font-size:12px; color:var(--gray); margin:0; }
+  .bio-modal video{ width:190px; height:190px; border-radius:50%; object-fit:cover; transform:scaleX(-1); background:#111827; display:block; }
+  .bio-modal .ring{ width:190px; height:190px; border-radius:50%; margin:0 auto 16px; position:relative; overflow:hidden; }
+  .bio-modal .ring.detecting{ box-shadow:0 0 0 4px var(--blue); }
+  .bio-modal .ring.ok{ box-shadow:0 0 0 4px var(--green); }
+  .bio-modal .ring.fail{ box-shadow:0 0 0 4px var(--red); }
+
+  .hidden{ display:none !important; }
+
+  /* ===================== MOBILE ===================== */
+  .mheader{ display:none; }
+
+  @media (max-width: 860px){
+    body{ font-size:14px; }
+    .menubar{ display:none; }
+    .mheader{
+      display:block; position:sticky; top:0; z-index:30;
+    }
+    .mheader .bar{
+      background:var(--blue); color:#fff; padding:12px 14px; display:flex; align-items:center; justify-content:space-between;
+    }
+    .mheader .bar .title{ font-size:15px; font-weight:700; }
+    .mheader .sub{
+      background:#fff; border-bottom:1px solid var(--border); padding:8px 14px; display:flex; justify-content:space-between; align-items:center;
+    }
+    .mheader .status-pill{ font-size:11px; font-weight:700; padding:4px 10px; border-radius:6px; }
+    .mheader .status-pill.locked{ background:#f0f0f0; color:var(--gray); }
+    .mheader .status-pill.open{ background:var(--green-bg); color:var(--green); }
+    .mheader .status-pill.blocked{ background:var(--red-bg); color:var(--red); }
+    .mheader .clock{ font-size:11px; color:var(--gray); }
+    .mheader .tf-row{ display:flex; gap:6px; overflow-x:auto; background:#fff; padding:6px 10px; border-bottom:1px solid var(--border); }
+    .mheader .tf-row .tf{ flex:none; padding:5px 10px; font-size:11px; border-radius:5px; border:1px solid var(--border); background:#fff; color:var(--gray); }
+    .mheader .tf-row .tf.active{ background:var(--blue-bg); color:var(--blue); border-color:var(--blue); font-weight:700; }
+
+    .app{
+      display:block; height:auto;
+    }
+    .chartcol{ order:1; }
+    .chart-frame{ margin:10px; min-height:220px; }
+    .orderpanel{
+      order:2; border-left:none; border-top:1px solid var(--border); padding:12px;
+    }
+    .below-chart{ order:3; margin:0 10px 10px; max-height:none; }
+    .watchlist{
+      order:4; border-right:none; border-top:1px solid var(--border); max-height:320px;
+    }
+    .bottombar{
+      order:5; position:sticky; bottom:0; flex-wrap:wrap; gap:12px 20px; padding:10px 14px;
+      box-shadow:0 -2px 6px rgba(0,0,0,.05);
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== mobile header ===== -->
+<div class="mheader">
+  <div class="bar">
+    <span class="title">金融システム(仮) 証券取引</span>
+    <span class="clock" id="m-clock" style="color:#fff;">--:--:--</span>
+  </div>
+  <div class="sub">
+    <span id="m-symbol-label" style="font-weight:700;">USDJPY</span>
+    <span style="display:flex; align-items:center; gap:8px;">
+      <span class="status-pill locked" id="m-status-pill">未ログイン</span>
+      <button id="btn-reset-mobile" style="background:#fff; border:1px solid var(--border); border-radius:5px; padding:4px 8px; font-size:10.5px; color:var(--gray);">🔄</button>
+    </span>
+  </div>
+  <div class="tf-row" id="tf-row-mobile"></div>
+</div>
+
+<div class="app">
+  <!-- ===== menu / title bar (desktop) ===== -->
+  <div class="menubar">
+    <div class="titlerow">
+      <div class="brand"><span class="dot"></span>金融システム(仮) 証券取引ターミナル デモ</div>
+      <div class="menuitems">
+        <span>ファイル(F)</span><span>表示(V)</span><span>挿入(I)</span><span>チャート(C)</span>
+        <span>ツール(T)</span><span>ウィンドウ(W)</span><span>ヘルプ(H)</span>
+      </div>
+      <div class="clock" id="d-clock">--:--:--</div>
+    </div>
+    <div class="toolbar">
+      <div id="tf-row-desktop" style="display:flex; gap:4px;"></div>
+      <div class="sep"></div>
+      <span style="font-size:11px; color:var(--gray);">気配値表示: <span id="quote-time">--:--:--</span></span>
+      <span class="status-pill locked" id="d-status-pill">🔒 未ログイン</span>
+      <button id="btn-reset-desktop" style="margin-left:8px; background:#fff; border:1px solid var(--border); border-radius:5px; padding:5px 10px; font-size:11px; color:var(--gray);">🔄 リセット</button>
+    </div>
+  </div>
+
+  <!-- ===== watchlist ===== -->
+  <div class="watchlist">
+    <div class="head"><span>気配値表示</span><span id="wl-time">--:--:--</span></div>
+    <table>
+      <thead><tr><th>通貨ペア</th><th class="num">Bid</th><th class="num">Ask</th></tr></thead>
+      <tbody id="wl-body"></tbody>
+    </table>
+  </div>
+
+  <!-- ===== chart column ===== -->
+  <div class="chartcol">
+    <div class="chart-frame">
+      <div class="cfheader">
+        <span class="sym" id="chart-symbol">USDJPY, H1</span>
+        <span class="px" id="chart-price">-</span>
+      </div>
+      <canvas id="chart-canvas"></canvas>
+    </div>
+    <div class="below-chart">
+      <div class="tabs">
+        <button class="active" data-tab="positions">保有ポジション</button>
+        <button data-tab="log">詳細ログ</button>
+      </div>
+      <div class="panel" id="panel-positions">
+        <div class="positions-empty" id="positions-empty">保有ポジションはありません</div>
+        <div id="positions-list"></div>
+      </div>
+      <div class="panel hidden" id="panel-log" style="padding:0;">
+        <div class="term" id="log-lines"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== order panel ===== -->
+  <div class="orderpanel" id="orderpanel">
+    <!-- content injected by JS: login card OR order card -->
+  </div>
+
+  <!-- ===== bottom account bar ===== -->
+  <div class="bottombar">
+    <div class="item"><span class="k">残高:</span><span class="v" id="bar-balance">¥1,000,000</span></div>
+    <div class="item"><span class="k">有効証拠金:</span><span class="v" id="bar-equity">¥1,000,000</span></div>
+    <div class="item"><span class="k">余剰証拠金:</span><span class="v" id="bar-free">¥1,000,000</span></div>
+    <div class="item"><span class="k">証拠金維持率:</span><span class="v" id="bar-level">---%</span></div>
+    <div class="item"><span class="k">損益:</span><span class="v" id="bar-pl">¥0</span></div>
+  </div>
+</div>
+
+<!-- 顔認証モーダル -->
+<div class="overlay" id="overlay">
+  <div class="bio-modal">
+    <div class="ring detecting" id="cam-ring">
+      <video id="cam-video" autoplay muted playsinline></video>
+    </div>
+    <h3 id="bio-title">顔をスキャン中...</h3>
+    <p id="bio-sub">カメラに顔を映してください</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script>
+  /* ==================== data ==================== */
+  const PAIRS = [
+    {s:'USDCHF', bid:0.83774, ask:0.83802, dir:'down'},
+    {s:'GBPUSD', bid:1.32885, ask:1.32912, dir:'down'},
+    {s:'EURUSD', bid:1.12156, ask:1.12175, dir:'up'},
+    {s:'USDJPY', bid:145.723, ask:145.746, dir:'down'},
+    {s:'USDCAD', bid:1.39779, ask:1.39807, dir:'down'},
+    {s:'AUDUSD', bid:0.64333, ask:0.64357, dir:'up'},
+    {s:'EURGBP', bid:0.84386, ask:0.84410, dir:'up'},
+    {s:'EURAUD', bid:1.74302, ask:1.74340, dir:'up'},
+    {s:'EURCHF', bid:0.93964, ask:0.93998, dir:'down'},
+    {s:'EURJPY', bid:163.446, ask:163.483, dir:'up'},
+    {s:'GBPCHF', bid:1.11331, ask:1.11373, dir:'up'},
+    {s:'CADJPY', bid:104.234, ask:104.279, dir:'up'},
+    {s:'GBPJPY', bid:193.657, ask:193.700, dir:'up'},
+    {s:'AUDNZD', bid:1.08987, ask:1.09033, dir:'up'},
+    {s:'AUDCAD', bid:0.89914, ask:0.89953, dir:'down'},
+    {s:'AUDCHF', bid:0.53896, ask:0.53932, dir:'up'},
+    {s:'AUDJPY', bid:93.755,  ask:93.794,  dir:'up'},
+    {s:'CHFJPY', bid:173.914, ask:173.955, dir:'down'},
+    {s:'EURNZD', bid:1.89995, ask:1.90048, dir:'down'},
+    {s:'EURCAD', bid:1.56760, ask:1.56804, dir:'down'},
+    {s:'CADCHF', bid:0.59919, ask:0.59961, dir:'up'},
+  ];
+  const PRICE_MAP = Object.fromEntries(PAIRS.map(p => [p.s, p]));
+  const TIMEFRAMES = ['M1','M5','M15','M30','H1','H4','D1','W1','MN'];
+
+  const state = {
+    session: 'LOCKED', // LOCKED | OPEN | BLOCKED
+    attackSimulated: false,
+    selectedSymbol: 'USDJPY',
+    timeframe: 'H1',
+    balance: 1000000,
+    usedMargin: 0,
+    positions: [],
+    order: {
+      displayed: { symbol:'USDJPY', side:'buy', lot:0.10 },
+      actual:    { symbol:'USDJPY', side:'buy', lot:0.10 },
+    },
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const fmtYen = (n) => '¥' + Math.round(n).toLocaleString('ja-JP');
+  const sideLabel = (s) => s === 'buy' ? '買い' : '売り';
+
+  /* ==================== log / positions ==================== */
+  function logEvent(msg, type){
+    const line = document.createElement('div');
+    line.className = 'line' + (type ? ' ' + type : '');
+    const t = new Date().toLocaleTimeString('ja-JP', {hour12:false});
+    line.textContent = `[${t}] ${msg}`;
+    $('log-lines').appendChild(line);
+    $('log-lines').scrollTop = $('log-lines').scrollHeight;
+  }
+
+  function renderPositions(){
+    const list = $('positions-list');
+    const empty = $('positions-empty');
+    if(state.positions.length === 0){
+      empty.classList.remove('hidden');
+      list.innerHTML = '';
+      return;
+    }
+    empty.classList.add('hidden');
+    list.innerHTML = state.positions.map(p => `
+      <div class="position-row">
+        <span class="psym">${p.symbol}</span>
+        <span class="pside ${p.side}">${sideLabel(p.side)}</span>
+        <span>${p.lot.toFixed(2)} lot</span>
+        <span>${p.price}</span>
+        <span style="color:var(--gray-light);">${p.time}</span>
+      </div>
+    `).join('');
+  }
+
+  /* ==================== watchlist ==================== */
+  function renderWatchlist(){
+    $('wl-body').innerHTML = PAIRS.map(p => `
+      <tr class="${p.dir} ${p.s === state.selectedSymbol ? 'selected' : ''}" data-sym="${p.s}">
+        <td><span class="arrow"></span>${p.s}</td>
+        <td class="num">${p.bid.toFixed(p.s.includes('JPY') ? 3 : 5)}</td>
+        <td class="num">${p.ask.toFixed(p.s.includes('JPY') ? 3 : 5)}</td>
+      </tr>
+    `).join('');
+    [...document.querySelectorAll('#wl-body tr')].forEach(tr => {
+      tr.addEventListener('click', () => selectSymbol(tr.dataset.sym));
+    });
+  }
+
+  function selectSymbol(sym){
+    state.selectedSymbol = sym;
+    renderWatchlist();
+    updateChartHeader();
+    generateAndDrawChart();
+    if(state.session === 'OPEN'){
+      $('order-symbol-select') && ($('order-symbol-select').value = sym);
+      onOrderFieldChange();
+    }
+  }
+
+  function updateChartHeader(){
+    const p = PRICE_MAP[state.selectedSymbol];
+    $('chart-symbol').textContent = `${state.selectedSymbol}, ${state.timeframe}`;
+    $('chart-price').textContent = `Bid ${p.bid} / Ask ${p.ask}`;
+    $('m-symbol-label').textContent = state.selectedSymbol;
+  }
+
+  /* ==================== chart (canvas candlesticks) ==================== */
+  let seed = 42;
+  function rand(){ seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed % 10000) / 10000; }
+
+  function generateCandles(n, basePrice){
+    const candles = [];
+    let price = basePrice;
+    for(let i = 0; i < n; i++){
+      const open = price;
+      const vol = basePrice * 0.0025;
+      const close = open + (rand() - 0.5) * vol * 2;
+      const high = Math.max(open, close) + rand() * vol * 0.8;
+      const low = Math.min(open, close) - rand() * vol * 0.8;
+      candles.push({open, high, low, close});
+      price = close;
+    }
+    return candles;
+  }
+
+  function generateAndDrawChart(){
+    const p = PRICE_MAP[state.selectedSymbol];
+    const base = (p.bid + p.ask) / 2;
+    const n = state.timeframe === 'M1' ? 60 : state.timeframe === 'D1' ? 25 : 40;
+    const candles = generateCandles(n, base);
+    drawChart($('chart-canvas'), candles, p.s.includes('JPY') ? 3 : 5);
+  }
+
+  function drawChart(canvas, candles, decimals){
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const W = rect.width, H = rect.height;
+    ctx.clearRect(0, 0, W, H);
+
+    const padL = 8, padR = 58, padT = 10, padB = 20;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+
+    let hi = -Infinity, lo = Infinity;
+    candles.forEach(c => { hi = Math.max(hi, c.high); lo = Math.min(lo, c.low); });
+    const range = (hi - lo) || 1;
+    const y = (v) => padT + (hi - v) / range * plotH;
+
+    // grid
+    ctx.strokeStyle = '#eef0f2';
+    ctx.lineWidth = 1;
+    for(let i = 0; i <= 5; i++){
+      const gy = padT + (plotH / 5) * i;
+      ctx.beginPath(); ctx.moveTo(padL, gy); ctx.lineTo(W - padR, gy); ctx.stroke();
+      const val = hi - (range / 5) * i;
+      ctx.fillStyle = '#9aa0a6'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(val.toFixed(decimals), W - padR + 6, gy + 3);
+    }
+
+    // candles
+    const cw = plotW / candles.length;
+    candles.forEach((c, i) => {
+      const cx = padL + cw * i + cw / 2;
+      const up = c.close >= c.open;
+      ctx.strokeStyle = up ? '#0a9c4b' : '#c00012';
+      ctx.fillStyle = up ? '#0a9c4b' : '#c00012';
+      ctx.beginPath();
+      ctx.moveTo(cx, y(c.high));
+      ctx.lineTo(cx, y(c.low));
+      ctx.stroke();
+      const bodyTop = y(Math.max(c.open, c.close));
+      const bodyBot = y(Math.min(c.open, c.close));
+      const bw = Math.max(cw * 0.55, 2);
+      ctx.fillRect(cx - bw / 2, bodyTop, bw, Math.max(bodyBot - bodyTop, 1));
+    });
+  }
+
+  /* ==================== timeframe tabs ==================== */
+  function renderTimeframeTabs(){
+    const html = TIMEFRAMES.map(tf => `<button class="tf ${tf === state.timeframe ? 'active' : ''}" data-tf="${tf}">${tf}</button>`).join('');
+    $('tf-row-desktop').innerHTML = html;
+    $('tf-row-mobile').innerHTML = html;
+    [...document.querySelectorAll('[data-tf]')].forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.timeframe = btn.dataset.tf;
+        renderTimeframeTabs();
+        updateChartHeader();
+        generateAndDrawChart();
+      });
+    });
+  }
+
+  /* ==================== clocks / status pills ==================== */
+  function tickClock(){
+    const t = new Date().toLocaleTimeString('ja-JP', { hour12:false });
+    $('d-clock').textContent = t;
+    $('m-clock').textContent = t;
+    $('wl-time').textContent = t;
+    $('quote-time').textContent = t;
+  }
+  setInterval(tickClock, 1000);
+
+  function setStatusPill(){
+    const map = {
+      LOCKED:  { cls:'locked',  text:'🔒 未ログイン' },
+      OPEN:    { cls:'open',    text:'🔓 OPEN - 取引可能' },
+      BLOCKED: { cls:'blocked', text:'⛔ CLOSE - 発注不可' },
+    };
+    const s = map[state.session];
+    const d = $('d-status-pill'); d.className = 'status-pill ' + s.cls; d.textContent = s.text;
+    const m = $('m-status-pill'); m.className = 'status-pill ' + s.cls; m.textContent = s.text.replace(/^[^\s]+\s/, '');
+  }
+
+  /* ==================== account bar ==================== */
+  function updateAccountBar(){
+    const equity = state.balance;
+    const free = equity - state.usedMargin;
+    const level = state.usedMargin > 0 ? Math.round(equity / state.usedMargin * 100) + '%' : '---%';
+    $('bar-balance').textContent = fmtYen(state.balance);
+    $('bar-equity').textContent = fmtYen(equity);
+    $('bar-free').textContent = fmtYen(free);
+    $('bar-level').textContent = level;
+    $('bar-pl').textContent = fmtYen(0);
+  }
+
+  /* ==================== face auth (webcam detection, shared) ==================== */
+  const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+  let faceModelsLoaded = false;
+  let currentStream = null;
+
+  async function loadFaceModels(){
+    if(faceModelsLoaded) return;
+    logEvent('顔検出モデルを読み込んでいます…');
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    faceModelsLoaded = true;
+    logEvent('✅ 顔検出モデルの読み込みが完了しました', 'ok');
+  }
+
+  function setRingState(cls){
+    const ring = $('cam-ring');
+    ring.classList.remove('detecting', 'ok', 'fail');
+    ring.classList.add(cls);
+  }
+
+  function stopCamera(){
+    if(currentStream){
+      currentStream.getTracks().forEach(t => t.stop());
+      currentStream = null;
+    }
+  }
+
+  async function doFaceAuth(purpose){
+    $('bio-title').textContent = purpose === 'login' ? '顔をスキャン中...(ログイン)' : '顔をスキャン中...(発注確定)';
+    $('bio-sub').textContent = 'カメラに顔を映してください';
+    setRingState('detecting');
+    $('overlay').classList.add('show');
+
+    try{
+      await loadFaceModels();
+      logEvent('カメラを起動します…');
+      currentStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      const video = $('cam-video');
+      video.srcObject = currentStream;
+      await video.play();
+
+      const detected = await new Promise((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 40;
+        const timer = setInterval(async () => {
+          attempts++;
+          try{
+            const result = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
+            if(result){ clearInterval(timer); resolve(true); return; }
+          }catch(e){ /* ignore */ }
+          if(attempts >= maxAttempts){ clearInterval(timer); resolve(false); }
+        }, 200);
+      });
+
+      stopCamera();
+
+      if(detected){
+        setRingState('ok');
+        $('bio-title').textContent = '顔を検出しました';
+        $('bio-sub').textContent = '認証成功';
+        logEvent('✅ 顔を検出しました。認証成功', 'ok');
+        await new Promise(r => setTimeout(r, 500));
+        $('overlay').classList.remove('show');
+        return true;
+      } else {
+        setRingState('fail');
+        $('bio-title').textContent = '顔を検出できませんでした';
+        $('bio-sub').textContent = 'もう一度お試しください';
+        logEvent('⚠️ 制限時間内に顔を検出できませんでした', 'warn');
+        await new Promise(r => setTimeout(r, 1200));
+        $('overlay').classList.remove('show');
+        return false;
+      }
+    }catch(err){
+      stopCamera();
+      setRingState('fail');
+      $('bio-title').textContent = 'カメラを利用できません';
+      $('bio-sub').textContent = err.name === 'NotAllowedError' ? 'カメラの使用が許可されていません' : (err.message || 'エラーが発生しました');
+      logEvent(`⚠️ カメラエラー(${err.name}): ${err.message}`, 'err');
+      await new Promise(r => setTimeout(r, 1500));
+      $('overlay').classList.remove('show');
+      return false;
+    }
+  }
+
+  /* ==================== order panel rendering ==================== */
+  function renderOrderPanel(){
+    const panel = $('orderpanel');
+    if(state.session === 'LOCKED' || state.session === 'BLOCKED'){
+      panel.innerHTML = `
+        <div class="op-card login-card">
+          <h4>👤 顔認証でログイン</h4>
+          <p class="note">Webカメラで顔を認証するとログインし、取引セッションが OPEN になります。PINやパスワードは使用しません。</p>
+          ${state.session === 'BLOCKED' ? '<p class="note" style="color:var(--red); font-weight:700;">セッションはCLOSE(発注不可)されています。再度ログインしてください。</p>' : ''}
+          <button class="cta" id="btn-login">😊 顔認証でログイン</button>
+        </div>
+      `;
+      $('btn-login').addEventListener('click', login);
+      return;
+    }
+
+    // OPEN state -> order form + attack panel
+    const symbolOptions = PAIRS.map(p => `<option value="${p.s}" ${p.s === state.order.displayed.symbol ? 'selected' : ''}>${p.s}</option>`).join('');
+    panel.innerHTML = `
+      <div class="op-card">
+        <h4>📝 新規注文</h4>
+        <div class="op-row">
+          <span class="lbl">通貨ペア</span>
+          <select id="order-symbol-select">${symbolOptions}</select>
+        </div>
+        <div class="op-row" style="display:block;">
+          <span class="lbl" style="display:block; margin-bottom:6px;">売買</span>
+          <div class="side-toggle">
+            <button class="buy ${state.order.displayed.side === 'buy' ? 'active' : ''}" id="btn-side-buy">買い</button>
+            <button class="sell ${state.order.displayed.side === 'sell' ? 'active' : ''}" id="btn-side-sell">売り</button>
+          </div>
+        </div>
+        <div class="op-row">
+          <span class="lbl">数量(ロット)</span>
+          <input type="number" id="order-lot-input" value="${state.order.displayed.lot.toFixed(2)}" min="0.01" step="0.01">
+        </div>
+        <div class="op-row">
+          <span class="lbl">必要証拠金(目安)</span>
+          <span id="order-cost-preview">-</span>
+        </div>
+        <button class="cta" id="btn-confirm-order">😊 この内容で発注する(顔認証)</button>
+      </div>
+
+      <div class="op-card attack-card">
+        <span class="tag">DEMO CONTROL</span>
+        <h4>🧪 攻撃者シミュレーション</h4>
+        <p class="note">MITB(Man-in-the-Browser)攻撃は、画面表示はそのままに送信データだけを裏で書き換えます。下記の値は自由に変更できます。</p>
+        <div class="op-row">
+          <span class="lbl">実際の通貨ペア</span>
+          <select id="attack-symbol-select">${PAIRS.map(p => `<option value="${p.s}" ${p.s === 'GBPJPY' ? 'selected' : ''}>${p.s}</option>`).join('')}</select>
+        </div>
+        <div class="op-row" style="display:block;">
+          <span class="lbl" style="display:block; margin-bottom:6px;">実際の売買</span>
+          <div class="side-toggle">
+            <button class="buy" id="attack-side-buy">買い</button>
+            <button class="sell active" id="attack-side-sell">売り</button>
+          </div>
+        </div>
+        <div class="op-row">
+          <span class="lbl">実際の数量(ロット)</span>
+          <input type="number" id="attack-lot-input" value="5.00" min="0.01" step="0.01">
+        </div>
+        <button class="cta outline" id="btn-attack">⚠️ MITB攻撃をシミュレート</button>
+      </div>
+    `;
+
+    $('order-symbol-select').addEventListener('change', onOrderFieldChange);
+    $('order-lot-input').addEventListener('input', onOrderFieldChange);
+    $('btn-side-buy').addEventListener('click', () => setOrderSide('buy'));
+    $('btn-side-sell').addEventListener('click', () => setOrderSide('sell'));
+    $('btn-confirm-order').addEventListener('click', confirmOrder);
+    $('btn-attack').addEventListener('click', triggerAttack);
+    $('attack-side-buy').addEventListener('click', () => setAttackSide('buy'));
+    $('attack-side-sell').addEventListener('click', () => setAttackSide('sell'));
+
+    updateCostPreview();
+  }
+
+  let attackSideVal = 'sell';
+  function setAttackSide(side){
+    if(state.attackSimulated) return;
+    attackSideVal = side;
+    $('attack-side-buy').classList.toggle('active', side === 'buy');
+    $('attack-side-sell').classList.toggle('active', side === 'sell');
+  }
+
+  function setOrderSide(side){
+    state.order.displayed.side = side;
+    if(!state.attackSimulated) state.order.actual.side = side;
+    $('btn-side-buy').classList.toggle('active', side === 'buy');
+    $('btn-side-sell').classList.toggle('active', side === 'sell');
+    updateCostPreview();
+    logEvent(`売買を「${sideLabel(side)}」に変更しました(表示内容)`);
+  }
+
+  function onOrderFieldChange(){
+    const symEl = $('order-symbol-select');
+    const lotEl = $('order-lot-input');
+    if(!symEl || !lotEl) return;
+    state.order.displayed.symbol = symEl.value;
+    let lot = parseFloat(lotEl.value);
+    if(isNaN(lot) || lot < 0.01) lot = 0.01;
+    state.order.displayed.lot = lot;
+    if(!state.attackSimulated){
+      state.order.actual.symbol = symEl.value;
+      state.order.actual.lot = lot;
+    }
+    updateCostPreview();
+    logEvent(`注文内容を 通貨ペア:${symEl.value} / 数量:${lot.toFixed(2)}lot に変更しました(表示内容)`);
+  }
+
+  function estimateCost(symbol, lot, side){
+    const p = PRICE_MAP[symbol];
+    const price = side === 'buy' ? p.ask : p.bid;
+    return lot * price * 100000 / 25;
+  }
+
+  function updateCostPreview(){
+    const el = $('order-cost-preview');
+    if(!el) return;
+    const cost = estimateCost(state.order.displayed.symbol, state.order.displayed.lot, state.order.displayed.side);
+    el.textContent = fmtYen(cost);
+  }
+
+  function triggerAttack(){
+    if(state.attackSimulated) return;
+    state.attackSimulated = true;
+
+    const symbol = $('attack-symbol-select').value;
+    let lot = parseFloat($('attack-lot-input').value);
+    if(isNaN(lot) || lot < 0.01) lot = 5.00;
+
+    state.order.actual.symbol = symbol;
+    state.order.actual.side = attackSideVal;
+    state.order.actual.lot = lot;
+
+    logEvent('[MITB] マルウェアがDOM外の送信データを書き換えました', 'err');
+    logEvent(`[MITB] 実際の注文: ${symbol} ${sideLabel(attackSideVal)} ${lot.toFixed(2)}lot`, 'err');
+    logEvent('[MITB] 画面表示(通貨ペア・売買・数量)は改ざんされていません(ユーザーは気づけない)', 'warn');
+
+    $('btn-attack').textContent = '✅ 攻撃を注入済み';
+    $('btn-attack').disabled = true;
+    $('attack-symbol-select').disabled = true;
+    $('attack-lot-input').disabled = true;
+    $('attack-side-buy').style.pointerEvents = 'none';
+    $('attack-side-sell').style.pointerEvents = 'none';
+  }
+
+  async function confirmOrder(){
+    $('btn-confirm-order').disabled = true;
+    logEvent('発注確定のための顔認証を開始します...');
+    const ok = await doFaceAuth('confirm');
+    if(!ok){
+      logEvent('顔認証に失敗したため、発注を中止しました', 'err');
+      $('btn-confirm-order').disabled = false;
+      return;
+    }
+    logEvent('表示内容と送信内容の突合を検証します');
+    verifyOrder();
+  }
+
+  function verifyOrder(){
+    const d = state.order.displayed, a = state.order.actual;
+    const mismatch = d.symbol !== a.symbol || d.side !== a.side || Math.abs(d.lot - a.lot) > 0.001;
+
+    if(mismatch){
+      state.session = 'BLOCKED';
+      setStatusPill();
+      logEvent('CLOSE判定: 表示内容と送信内容が不一致 → 発注をブロックしました', 'err');
+      showResult(`
+        <div class="result-card">
+          <div class="ic">⛔</div>
+          <h3 style="color:var(--red);">発注不可</h3>
+          <p>CLOSE技術により、MITB攻撃による注文改ざんを検知したため発注を停止しました。</p>
+          <div class="diff">
+            <div><span class="k">通貨ペア</span><span></span></div>
+            <div><span class="k">　表示内容</span><span class="before">${d.symbol}</span></div>
+            <div><span class="k">　実際の送信内容</span><span class="after">${a.symbol}</span></div>
+            <div><span class="k">売買</span><span></span></div>
+            <div><span class="k">　表示内容</span><span class="before">${sideLabel(d.side)}</span></div>
+            <div><span class="k">　実際の送信内容</span><span class="after">${sideLabel(a.side)}</span></div>
+            <div><span class="k">数量</span><span></span></div>
+            <div><span class="k">　表示内容</span><span class="before">${d.lot.toFixed(2)}lot</span></div>
+            <div><span class="k">　実際の送信内容</span><span class="after">${a.lot.toFixed(2)}lot</span></div>
+          </div>
+          <button class="cta ghost" id="btn-retry-login">🔄 再ログインする</button>
+        </div>
+      `);
+      $('btn-retry-login').addEventListener('click', () => { state.attackSimulated = false; renderOrderPanel(); });
+    } else {
+      const cost = estimateCost(d.symbol, d.lot, d.side);
+      state.usedMargin += cost;
+      const price = d.side === 'buy' ? PRICE_MAP[d.symbol].ask : PRICE_MAP[d.symbol].bid;
+      state.positions.push({
+        symbol: d.symbol, side: d.side, lot: d.lot, price,
+        time: new Date().toLocaleTimeString('ja-JP', {hour12:false}),
+      });
+      renderPositions();
+      updateAccountBar();
+      logEvent('OPEN判定: 表示内容と送信内容が一致 → 発注を実行しました', 'ok');
+      logEvent(`${d.symbol} ${sideLabel(d.side)} ${d.lot.toFixed(2)}lot を約定しました(必要証拠金 ${fmtYen(cost)})`, 'ok');
+      showResult(`
+        <div class="result-card">
+          <div class="ic">✅</div>
+          <h3 style="color:var(--green);">発注成立</h3>
+          <p>${d.symbol} を ${sideLabel(d.side)} ${d.lot.toFixed(2)}lot で約定しました。</p>
+          <p>余剰証拠金: ${fmtYen(state.balance - state.usedMargin)}</p>
+          <button class="cta ghost" id="btn-new-order">🔄 新規注文へ戻る</button>
+        </div>
+      `);
+      $('btn-new-order').addEventListener('click', () => { state.attackSimulated = false; renderOrderPanel(); });
+    }
+  }
+
+  function showResult(html){
+    $('orderpanel').innerHTML = html;
+  }
+
+  /* ==================== login / reset ==================== */
+  async function login(){
+    $('btn-login').disabled = true;
+    logEvent('顔認証を開始します(ログイン)...');
+    const ok = await doFaceAuth('login');
+    if(!ok){
+      logEvent('顔認証に失敗したため、ログインを中止しました', 'err');
+      $('btn-login').disabled = false;
+      return;
+    }
+    state.session = 'OPEN';
+    setStatusPill();
+    logEvent('セッションを OPEN に設定しました', 'ok');
+    renderOrderPanel();
+  }
+
+  function resetAll(){
+    state.session = 'LOCKED';
+    state.attackSimulated = false;
+    state.balance = 1000000;
+    state.usedMargin = 0;
+    state.positions = [];
+    state.order = {
+      displayed: { symbol: state.selectedSymbol, side:'buy', lot:0.10 },
+      actual:    { symbol: state.selectedSymbol, side:'buy', lot:0.10 },
+    };
+    setStatusPill();
+    renderPositions();
+    updateAccountBar();
+    renderOrderPanel();
+    $('log-lines').innerHTML = '';
+    logEvent('デモをリセットしました');
+  }
+
+  /* ==================== tabs (positions/log) ==================== */
+  function initBelowChartTabs(){
+    document.querySelectorAll('.below-chart .tabs button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.below-chart .tabs button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        $('panel-positions').classList.toggle('hidden', btn.dataset.tab !== 'positions');
+        $('panel-log').classList.toggle('hidden', btn.dataset.tab !== 'log');
+      });
+    });
+  }
+
+  /* ==================== init ==================== */
+  (async function init(){
+    renderWatchlist();
+    renderTimeframeTabs();
+    updateChartHeader();
+    generateAndDrawChart();
+    setStatusPill();
+    updateAccountBar();
+    renderOrderPanel();
+    initBelowChartTabs();
+    tickClock();
+    $('btn-reset-desktop').addEventListener('click', resetAll);
+    $('btn-reset-mobile').addEventListener('click', resetAll);
+    window.addEventListener('resize', generateAndDrawChart);
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      logEvent('⚠️ このブラウザはカメラ(getUserMedia)に対応していません', 'err');
+    }
+    logEvent('デモを開始しました。まずは顔認証でログインしてください。');
+  })();
+</script>
+</body>
+</html>
